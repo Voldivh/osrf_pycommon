@@ -23,9 +23,19 @@ def get_loop_impl(asyncio):
     if getattr(_thread_local, 'loop_has_been_setup', False):
         return asyncio.get_event_loop()
     # Setup this thread's loop and return it
-    if os.name == 'nt':
-        try:
-            loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+        have_running_loop = True
+    except RuntimeError:
+        # Thrown when there is no running loop
+        have_running_loop = False
+    except AttributeError:
+        # Thrown when on Python < 3.7
+        loop = asyncio.get_event_loop()
+        have_running_loop = True
+
+    if have_running_loop:
+        if os.name == 'nt':
             if not isinstance(loop, asyncio.ProactorEventLoop):
                 # Before replacing the existing loop, explicitly
                 # close it to prevent an implicit close during
@@ -33,15 +43,14 @@ def get_loop_impl(asyncio):
                 # problem depending on the loop implementation.
                 loop.close()
                 loop = asyncio.ProactorEventLoop()
-                asyncio.set_event_loop(loop)
-        except (RuntimeError, AssertionError):
-            loop = asyncio.ProactorEventLoop()
-            asyncio.set_event_loop(loop)
     else:
-        try:
-            loop = asyncio.get_event_loop()
-        except (RuntimeError, AssertionError):
+        if os.name == 'nt':
+            loop = asyncio.ProactorEventLoop()
+        else:
             loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+
+    asyncio.set_event_loop(loop)
+
     _thread_local.loop_has_been_setup = True
+
     return loop
